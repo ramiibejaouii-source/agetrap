@@ -1,26 +1,38 @@
 import React, { useState } from 'react';
 import { Bus } from 'lucide-react';
 
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
 const TUNISIAN_REGIONS = {
-  "Tunis": ["Tunis", "Carthage", "La Marsa", "Le Bardo", "Sidi Bou Said", "El Menzah"],
-  "Ariana": ["Ariana Ville", "La Soukra", "Raoued", "Kalaat el-Andalous", "Sidi Thabet"],
-  "Ben Arous": ["Ben Arous", "Megrine", "Radès", "Hammam Lif", "Ezzahra", "Fouchana"],
-  "Manouba": ["Manouba", "Oued Ellil", "Den Den", "Douar Hicher", "Tebourba", "El Batan"],
-  "Sousse": ["Sousse Ville", "Hammam Sousse", "Akouda", "Kalaa Kebira", "Enfidha", "Msaken"],
-  "Sfax": ["Sfax Ville", "Sakiet Ezzit", "Sakiet Eddaier", "Thyna", "El Hencha", "Mahres"],
-  "Nabeul": ["Nabeul", "Hammamet", "Kelibia", "Menzel Temime", "Korba", "Grombalia"],
-  "Bizerte": ["Bizerte Nord", "Bizerte Sud", "Menzel Bourguiba", "Mateur", "Ras Jebel"],
-  "Monastir": ["Monastir", "Moknine", "Jemmal", "Ksar Hellal", "Sahline", "Téboulba"],
-  "Mahdia": ["Mahdia", "Ksour Essef", "El Jem", "Chebba", "Mellouleche"]
+  Tunis: ['Tunis', 'Carthage', 'La Marsa', 'Le Bardo', 'Sidi Bou Said', 'El Menzah'],
+  Ariana: ['Ariana Ville', 'La Soukra', 'Raoued', 'Kalaat el-Andalous', 'Sidi Thabet'],
+  'Ben Arous': ['Ben Arous', 'Megrine', 'Radès', 'Hammam Lif', 'Ezzahra', 'Fouchana'],
+  Manouba: ['Manouba', 'Oued Ellil', 'Den Den', 'Douar Hicher', 'Tebourba', 'El Batan'],
+  Sousse: ['Sousse Ville', 'Hammam Sousse', 'Akouda', 'Kalaa Kebira', 'Enfidha', 'Msaken'],
+  Sfax: ['Sfax Ville', 'Sakiet Ezzit', 'Sakiet Eddaier', 'Thyna', 'El Hencha', 'Mahres'],
+  Nabeul: ['Nabeul', 'Hammamet', 'Kelibia', 'Menzel Temime', 'Korba', 'Grombalia'],
+  Bizerte: ['Bizerte Nord', 'Bizerte Sud', 'Menzel Bourguiba', 'Mateur', 'Ras Jebel'],
+  Monastir: ['Monastir', 'Moknine', 'Jemmal', 'Ksar Hellal', 'Sahline', 'Téboulba'],
+  Mahdia: ['Mahdia', 'Ksour Essef', 'El Jem', 'Chebba', 'Mellouleche'],
 };
 
-// Static Admin Account
-const STATIC_ADMIN = {
-  fullName: 'AGETRAP Administrator',
-  email: 'admin@agetrap.tn',
-  password: 'admin123',
-  role: 'admin'
-};
+function parseJwtPayload(token) {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 2 && parts.length !== 3) return {};
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const json = decodeURIComponent(
+      atob(base64)
+        .split('')
+        .map((c) => `%${`00${c.charCodeAt(0).toString(16)}`.slice(-2)}`)
+        .join('')
+    );
+    return JSON.parse(json);
+  } catch {
+    return {};
+  }
+}
 
 export default function LoginView({ onLoginSuccess }) {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -31,7 +43,9 @@ export default function LoginView({ onLoginSuccess }) {
   const [city, setCity] = useState(TUNISIAN_REGIONS['Tunis'][0]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('client');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [infoMsg, setInfoMsg] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const handleGovernorateChange = (e) => {
     const selectedGov = e.target.value;
@@ -39,59 +53,113 @@ export default function LoginView({ onLoginSuccess }) {
     setCity(TUNISIAN_REGIONS[selectedGov][0]);
   };
 
-  const handleSubmit = (e) => {
+  const splitFullName = (name) => {
+    const clean = name.trim().replace(/\s+/g, ' ');
+    if (!clean) return { prenom: 'Passager', nom: 'AGETRAP' };
+    const parts = clean.split(' ');
+    if (parts.length === 1) {
+      return { prenom: parts[0], nom: parts[0] };
+    }
+    return {
+      prenom: parts[0],
+      nom: parts.slice(1).join(' '),
+    };
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setErrorMsg('');
+    setInfoMsg('');
+    setSubmitting(true);
 
-    if (isSignUp) {
-      if (email.toLowerCase() === STATIC_ADMIN.email) {
-        alert("This email is reserved for the system administrator.");
-        return;
-      }
+    try {
+      if (isSignUp) {
+        if (password.length < 8) {
+          setErrorMsg('Password must be at least 8 characters long.');
+          setSubmitting(false);
+          return;
+        }
 
-      const newUser = {
-        fullName,
-        cin,
-        phone,
-        governorate,
-        city,
-        email,
-        password,
-        role
-      };
+        const { prenom, nom } = splitFullName(fullName);
+        const res = await fetch(`${API_BASE_URL}/auth/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            nom,
+            prenom,
+            email: email.trim(),
+            mot_de_passe: password,
+            telephone: phone.trim() || undefined,
+          }),
+        });
 
-      const existingUsers = JSON.parse(localStorage.getItem('agetrap_users')) || [];
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setErrorMsg(data.erreur || 'Unable to register account.');
+          setSubmitting(false);
+          return;
+        }
 
-      if (existingUsers.some((u) => u.email.toLowerCase() === email.toLowerCase())) {
-        alert("An account with this email already exists! Try signing in.");
-        return;
-      }
+        const profiles = JSON.parse(localStorage.getItem('agetrap_profiles')) || {};
+        profiles[email.trim().toLowerCase()] = {
+          fullName: fullName.trim() || `${prenom} ${nom}`,
+          cin: cin.trim(),
+          phone: phone.trim(),
+          governorate,
+          city,
+          email: email.trim(),
+        };
+        localStorage.setItem('agetrap_profiles', JSON.stringify(profiles));
 
-      existingUsers.push(newUser);
-      localStorage.setItem('agetrap_users', JSON.stringify(existingUsers));
-
-      alert(`Account created as ${role.toUpperCase()}! Please sign in.`);
-      setIsSignUp(false);
-    } else {
-      // 1. Check Static Admin Account first
-      if (
-        email.toLowerCase() === STATIC_ADMIN.email &&
-        password === STATIC_ADMIN.password
-      ) {
-        onLoginSuccess('admin', STATIC_ADMIN);
-        return;
-      }
-
-      // 2. Check registered users in localStorage
-      const existingUsers = JSON.parse(localStorage.getItem('agetrap_users')) || [];
-      const foundUser = existingUsers.find(
-        (u) => u.email.toLowerCase() === email.toLowerCase() && u.password === password
-      );
-
-      if (foundUser) {
-        onLoginSuccess(foundUser.role, foundUser);
+        setInfoMsg('Passenger account created! You can now sign in.');
+        setIsSignUp(false);
       } else {
-        alert("Invalid email or password. (Admin demo: admin@agetrap.tn / admin123)");
+        const res = await fetch(`${API_BASE_URL}/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: email.trim(),
+            mot_de_passe: password,
+          }),
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setErrorMsg(data.erreur || 'Invalid email or password.');
+          setSubmitting(false);
+          return;
+        }
+
+        const role = data.role || 'passager';
+        const token = data.token;
+        const payload = parseJwtPayload(token);
+
+        const profiles = JSON.parse(localStorage.getItem('agetrap_profiles')) || {};
+        const savedProfile = profiles[email.trim().toLowerCase()] || {};
+
+        const userObj = {
+          id: payload.id,
+          email: email.trim(),
+          role,
+          fullName:
+            savedProfile.fullName ||
+            (role === 'administrateur'
+              ? 'AGETRAP Administrator'
+              : role === 'chauffeur'
+                ? 'AGETRAP Driver'
+                : email.trim().split('@')[0]),
+          cin: savedProfile.cin || '',
+          phone: savedProfile.phone || '',
+          governorate: savedProfile.governorate || 'Tunis',
+          city: savedProfile.city || 'Tunis',
+        };
+
+        onLoginSuccess(role, userObj, token);
       }
+    } catch {
+      setErrorMsg(`Cannot reach backend at ${API_BASE_URL}. Check that the server is running.`);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -102,26 +170,49 @@ export default function LoginView({ onLoginSuccess }) {
           <div className="brand-icon brand-icon-large">
             <Bus size={28} />
           </div>
-          <h2>{isSignUp ? 'Create an Account' : 'Welcome to AGETRAP'}</h2>
+          <h2>{isSignUp ? 'Create Passenger Account' : 'Welcome to AGETRAP'}</h2>
           <p>
             {isSignUp
-              ? 'Select your role and register for the portal'
-              : 'Sign in with your credentials'}
+              ? 'Register a passenger account on AGETRAP'
+              : 'Sign in with your AGETRAP account'}
           </p>
         </div>
+
+        {errorMsg && (
+          <div
+            style={{
+              marginBottom: '12px',
+              padding: '10px 12px',
+              borderRadius: '8px',
+              background: '#fef2f2',
+              color: '#991b1b',
+              fontSize: '0.88rem',
+              fontWeight: 600,
+            }}
+          >
+            {errorMsg}
+          </div>
+        )}
+
+        {infoMsg && (
+          <div
+            style={{
+              marginBottom: '12px',
+              padding: '10px 12px',
+              borderRadius: '8px',
+              background: '#ecfdf5',
+              color: '#065f46',
+              fontSize: '0.88rem',
+              fontWeight: 600,
+            }}
+          >
+            {infoMsg}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="login-form">
           {isSignUp && (
             <>
-              <div className="input-group">
-                <label>Account Role</label>
-                <select value={role} onChange={(e) => setRole(e.target.value)}>
-                  <option value="client">Client</option>
-                  <option value="driver">Driver</option>
-                  <option value="technician">Maintenance Technician</option>
-                </select>
-              </div>
-
               <div className="input-group">
                 <label>Full Name</label>
                 <input
@@ -134,25 +225,23 @@ export default function LoginView({ onLoginSuccess }) {
               </div>
 
               <div className="input-group">
-                <label>CIN Number (National ID)</label>
+                <label>CIN Number (Optional)</label>
                 <input
                   type="text"
                   placeholder="e.g., 08234567"
                   maxLength="8"
                   value={cin}
                   onChange={(e) => setCin(e.target.value)}
-                  required
                 />
               </div>
 
               <div className="input-group">
-                <label>Phone Number</label>
+                <label>Phone Number (Optional)</label>
                 <input
                   type="tel"
                   placeholder="e.g., +216 20 000 000"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  required
                 />
               </div>
 
@@ -194,7 +283,7 @@ export default function LoginView({ onLoginSuccess }) {
           </div>
 
           <div className="input-group">
-            <label>Password</label>
+            <label>Password {isSignUp ? '(min. 8 characters)' : ''}</label>
             <input
               type="password"
               placeholder="••••••••"
@@ -204,8 +293,17 @@ export default function LoginView({ onLoginSuccess }) {
             />
           </div>
 
-          <button type="submit" className="btn-primary" style={{ marginTop: '6px' }}>
-            {isSignUp ? 'Create Account' : 'Sign In'}
+          <button
+            type="submit"
+            className="btn-primary"
+            style={{ marginTop: '6px' }}
+            disabled={submitting}
+          >
+            {submitting
+              ? 'Please wait...'
+              : isSignUp
+                ? 'Create Passenger Account'
+                : 'Sign In'}
           </button>
         </form>
 
@@ -216,7 +314,11 @@ export default function LoginView({ onLoginSuccess }) {
           <button
             type="button"
             className="auth-switch-btn"
-            onClick={() => setIsSignUp(!isSignUp)}
+            onClick={() => {
+              setErrorMsg('');
+              setInfoMsg('');
+              setIsSignUp(!isSignUp);
+            }}
           >
             {isSignUp ? 'Sign In' : 'Sign Up'}
           </button>
